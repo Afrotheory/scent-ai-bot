@@ -61,20 +61,39 @@ else:
     if st.button("生成专家回复"):
         if customer_input:
             with st.spinner("Gemini 正在分析 SOP 并组织语言..."):
-                # 构建 Prompt
-                prompt = (
-                    f"Context: {sop_content}\n\n"
-                    f"Products: {product_content}\n\n"
-                    "Task: Analyze the following customer message based on the SOP stages and product matrix. "
-                    "Internal analysis in Chinese, final reply to customer in elegant English.\n\n"
-                    f"Customer: {customer_input}"
-                )
+                # 构建 Prompt（强硬指令版）
+                prompt = f"""
+                You are a Scent Curator for Cold-Infused Incense. 
+                Your goal: Sound like a sophisticated, helpful friend. 
+                
+                【Rules】
+                1. CONCISE: Keep English replies under 3 sentences. 
+                2. HUMAN-LIKE: No jargon. Use "Actually...", "I think you'll love...".
+                3. STRUCTURE: You MUST provide the response in exactly this format:
+                
+                [SOP阶段 & 痛点分析]
+                (这里用中文简短分析：阶段+痛点)
+                
+                ---
+                
+                [English Reply]
+                (Here is your warm, short, 1-3 sentence response in English)
+
+                【Context】
+                SOP: {sop_content}
+                Products: {product_content}
+
+                【Customer Message】
+                {customer_input}
+                """
 
                 try:
                     response = model.generate_content(prompt)
+                    # 这样可以让结果显示得更漂亮
+                    st.subheader("💡 处理建议")
                     st.markdown(response.text)
                 except Exception as e:
-                    st.error(f"生成內容時發生錯誤: {e}")
+                    st.error(f"发生错误: {e}")
         else:
             st.warning("请先输入客户内容")
 
