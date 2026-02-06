@@ -29,7 +29,7 @@ if not gemini_key:
 else:
     genai.configure(api_key=gemini_key)
     # 使用 gemini-1.5-flash (速度快且免费额度高)
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    model = genai.GenerativeModel(model_name="models/gemini-1.5-flash")
 
     customer_input = st.text_area(
         "粘贴客户的询盘 (Paste customer query here):",
