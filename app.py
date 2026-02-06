@@ -28,36 +28,53 @@ gemini_key = st.secrets.get("GEMINI_API_KEY")
 if not gemini_key:
     st.error("请在 Streamlit Secrets 中配置 GEMINI_API_KEY")
 else:
-    try:
-        genai.configure(api_key=gemini_key)
+    genai.configure(api_key=gemini_key)
 
-        # 【兼容性修复】：自动选择可用模型
-        # 有些 Key 需要 'gemini-1.5-flash'，有些需要 'models/gemini-1.5-flash'
-        # 我们这里直接指定一个最稳妥的调用方式
+    # 【核心修复逻辑】：自动检测可用模型并選擇合適的名稱
+    try:
+        # 1. 自動獲取可用模型列表，只保留支持 generateContent 的
+        available_models = [
+            m.name
+            for m in genai.list_models()
+            if "generateContent" in getattr(m, "supported_generation_methods", [])
+        ]
+
+        # 2. 優先選擇包含 'gemini-1.5-flash' 的模型，否則退回第一個可用模型
+        target_model = next(
+            (m for m in available_models if "gemini-1.5-flash" in m), None
+        )
+        if not target_model:
+            target_model = available_models[0] if available_models else "models/gemini-1.5-flash"
+
+        model = genai.GenerativeModel(model_name=target_model)
+        # st.success(f"已成功加载模型: {target_model}")  # 如需調試可打開
+    except Exception as e:
+        st.error(f"无法获取模型列表，请检查 API Key 是否有效: {e}")
+        # 保底方案：仍嘗試使用通用名稱
         model = genai.GenerativeModel("gemini-1.5-flash")
 
-        customer_input = st.text_area(
-            "粘贴客户的询盘 (Paste customer query here):",
-            placeholder="e.g. Why is it so expensive?",
-        )
+    customer_input = st.text_area(
+        "粘贴客户的询盘 (Paste customer query here):",
+        placeholder="e.g. Why is it so expensive?",
+    )
 
-        if st.button("生成专家回复"):
-            if customer_input:
-                with st.spinner("Gemini 正在分析 SOP 并组织语言..."):
-                    # 构建 Prompt
-                    prompt = (
-                        f"Context: {sop_content}\n\n"
-                        f"Products: {product_content}\n\n"
-                        "Task: Analyze the following customer message based on the SOP stages and product matrix. "
-                        "Internal analysis in Chinese, final reply to customer in elegant English.\n\n"
-                        f"Customer: {customer_input}"
-                    )
+    if st.button("生成专家回复"):
+        if customer_input:
+            with st.spinner("Gemini 正在分析 SOP 并组织语言..."):
+                # 构建 Prompt
+                prompt = (
+                    f"Context: {sop_content}\n\n"
+                    f"Products: {product_content}\n\n"
+                    "Task: Analyze the following customer message based on the SOP stages and product matrix. "
+                    "Internal analysis in Chinese, final reply to customer in elegant English.\n\n"
+                    f"Customer: {customer_input}"
+                )
 
-                    # 增加错误重试逻辑
+                try:
                     response = model.generate_content(prompt)
                     st.markdown(response.text)
-            else:
-                st.warning("请先输入客户内容")
-    except Exception as e:
-        st.error(f"模型初始化失败，可能是API Key无效或地区限制: {e}")
+                except Exception as e:
+                    st.error(f"生成內容時發生錯誤: {e}")
+        else:
+            st.warning("请先输入客户内容")
 
