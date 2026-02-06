@@ -61,24 +61,25 @@ else:
     if st.button("生成专家回复"):
         if customer_input:
             with st.spinner("Gemini 正在分析 SOP 并组织语言..."):
-                # 构建 Prompt（强硬指令版）
+                # 构建 Prompt（全功能增强版）
                 prompt = f"""
                 You are a Scent Curator for Cold-Infused Incense. 
-                Your goal: Sound like a sophisticated, helpful friend. 
+                Your goal: Provide a professional analysis and a short, warm, human-like reply.
                 
-                【Rules】
-                1. CONCISE: Keep English replies under 3 sentences. 
-                2. HUMAN-LIKE: No jargon. Use "Actually...", "I think you'll love...".
-                3. STRUCTURE: You MUST provide the response in exactly this format:
+                【Format Requirement】
+                You MUST respond in the following structure:
                 
-                [SOP阶段 & 痛点分析]
-                (这里用中文简短分析：阶段+痛点)
+                ### 1. 内部逻辑分析 (Internal Analysis)
+                - **SOP 阶段**: [具体阶段名称]
+                - **意图与心理**: [分析客户现在的心理状态和痛点]
                 
-                ---
+                ### 2. 建议回复 (English Reply)
+                [Write a 1-3 sentence response in elegant, warm, and natural English]
                 
-                [English Reply]
-                (Here is your warm, short, 1-3 sentence response in English)
+                ### 3. 中文对应参考 (Translation)
+                [提供上述英文回复的中文翻译，方便我核对]
 
+                ---
                 【Context】
                 SOP: {sop_content}
                 Products: {product_content}
