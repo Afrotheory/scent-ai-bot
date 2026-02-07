@@ -1,15 +1,15 @@
 import streamlit as st
 import google.generativeai as genai
 
-# 1. 页面配置
+# 1. 頁面配置
 st.set_page_config(page_title="Scent Curator Assistant", layout="centered")
-st.title("🏯 东方香礼跨境营销助手 (专业版)")
+st.title("🏯 東方香禮跨境營銷助手 (專業版)")
 
-# 2. 初始化对话记忆 (Multi-turn Chat)
+# 2. 初始化對話記憶
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# 3. 读取知识库 (增加缓存提高性能)
+# 3. 讀取知識庫
 @st.cache_data
 def load_docs():
     try:
@@ -19,52 +19,35 @@ def load_docs():
             product = f.read()
         return sop, product
     except Exception as e:
-        st.error(f"读取文件失败: {e}")
+        st.error(f"讀取文件失敗: {e}")
         return "", ""
 
 sop_content, product_content = load_docs()
 
-# 4. 配置 Gemini API
+# 4. 配置 Gemini
 gemini_key = st.secrets.get("GEMINI_API_KEY")
-
 if not gemini_key:
-    st.error("请在 Streamlit Secrets 中配置 GEMINI_API_KEY")
+    st.error("請在 Secrets 中配置 GEMINI_API_KEY")
 else:
     genai.configure(api_key=gemini_key)
+    model = genai.GenerativeModel('gemini-1.5-flash')
 
-    # 自动选择最合适的 Gemini 模型名称 (修复404问题)
-    try:
-        available_models = [m.name for m in genai.list_models() if "generateContent" in m.supported_generation_methods]
-        target_model = next((m for m in available_models if "gemini-1.5-flash" in m), available_models[0])
-        model = genai.GenerativeModel(model_name=target_model)
-    except Exception as e:
-        st.error(f"模型加载失败: {e}")
-        model = None
-
-    # 5. 侧边栏控制
     with st.sidebar:
-        st.header("控制面板")
-        if st.button("清除对话记录"):
+        if st.button("清除對話記錄 (Clear Chat)"):
             st.session_state.messages = []
             st.rerun()
-        st.markdown("---")
-        st.info("💡 系统已加载 SOP 与产品手册，现在拥有上下文记忆。")
 
-    # 6. 显示历史聊天记录
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    # 7. 用户输入逻辑
-    if prompt_input := st.chat_input("粘贴客户的话..."):
-        # 显示用户消息
+    if prompt := st.chat_input("在此粘貼客戶的話..."):
         with st.chat_message("user"):
-            st.markdown(prompt_input)
-        st.session_state.messages.append({"role": "user", "content": prompt_input})
+            st.markdown(prompt)
+        st.session_state.messages.append({"role": "user", "content": prompt})
 
-        # 8. 核心 Prompt 整合
-        # 療癒師角色、望聞問切、破冰追問、轉化意圖
-      system_instruction = f"""
+        # --- 核心指令重構 (注意這裡的縮進) ---
+        system_instruction = f"""
         You are an "Eastern Scent Therapist." Your goal: Build trust via concise, professional diagnosis. 
 
         【Core Knowledge】
@@ -73,7 +56,7 @@ else:
 
         【Communication Rules - MANDATORY】
         1. STRIKE THE CHAT-KILLER: No long paragraphs. English replies MUST be 1-3 short, natural sentences.
-        2. DIAGNOSIS (望聞問切): If a symptom is mentioned, ask ONLY ONE specific follow-up question (e.g., "Is the pain worse in the morning?" or "Is it hard to fall asleep or stay asleep?").
+        2. DIAGNOSIS (望聞問切): If a symptom is mentioned, ask ONLY ONE specific follow-up question.
         3. CHASE-UP STRATEGY: Provide a ultra-short (max 2 sentences) follow-up text with its Chinese translation.
         4. TRANSLATION: Every English text provided must have a corresponding Chinese translation.
 
@@ -91,18 +74,15 @@ else:
         [上述英文回覆的對應中文]
         """
 
-        # 获取最近几轮对话上下文
-        context_history = "\n".join([f"{m['role']}: {m['content']}" for m in st.session_state.messages[-5:]])
-        final_prompt = f"{system_instruction}\n\nRecent History:\n{context_history}\n\nLatest Query: {prompt_input}"
-
-        # 9. 调用 AI 生成回复
-        if model:
-            with st.chat_message("assistant"):
-                with st.spinner("正在思考最地道的表达..."):
-                    try:
-                        response = model.generate_content(final_prompt)
-                        full_response = response.text
-                        st.markdown(full_response)
-                        st.session_state.messages.append({"role": "assistant", "content": full_response})
-                    except Exception as e:
-                        st.error(f"生成失败: {e}")
+        with st.chat_message("assistant"):
+            with st.spinner("思考中..."):
+                try:
+                    history_context = "\n".join([f"{m['role']}: {m['content']}" for m in st.session_state.messages[-5:]])
+                    full_prompt = f"{system_instruction}\n\nHistory:\n{history_context}\n\nLatest Query: {prompt}"
+                    
+                    response = model.generate_content(full_prompt)
+                    answer = response.text
+                    st.markdown(answer)
+                    st.session_state.messages.append({"role": "assistant", "content": answer})
+                except Exception as e:
+                    st.error(f"生成失敗: {e}")
