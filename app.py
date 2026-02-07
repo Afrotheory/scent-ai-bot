@@ -1,28 +1,30 @@
 import streamlit as st
 import google.generativeai as genai
 
-# 页面配置
+# 1. 页面配置
 st.set_page_config(page_title="Scent Curator Assistant", layout="centered")
-st.title("🏯 东方香礼跨境营销助手 (Gemini版)")
+st.title("🏯 东方香礼跨境营销助手 (专业版)")
 
+# 2. 初始化对话记忆 (Multi-turn Chat)
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-# 读取本地知识库
+# 3. 读取知识库 (增加缓存提高性能)
+@st.cache_data
 def load_docs():
     try:
-        # 使用 utf-8 确保中文不乱码
         with open("docs/SOP_Flow.md", "r", encoding="utf-8") as f:
             sop = f.read()
         with open("docs/Product_Info.md", "r", encoding="utf-8") as f:
             product = f.read()
         return sop, product
     except Exception as e:
-        st.error(f"读取文档失败: {e}")
+        st.error(f"读取文件失败: {e}")
         return "", ""
-
 
 sop_content, product_content = load_docs()
 
-# 获取 Gemini API Key
+# 4. 配置 Gemini API
 gemini_key = st.secrets.get("GEMINI_API_KEY")
 
 if not gemini_key:
@@ -30,71 +32,74 @@ if not gemini_key:
 else:
     genai.configure(api_key=gemini_key)
 
-    # 【核心修复逻辑】：自动检测可用模型并選擇合適的名稱
+    # 自动选择最合适的 Gemini 模型名称 (修复404问题)
     try:
-        # 1. 自動獲取可用模型列表，只保留支持 generateContent 的
-        available_models = [
-            m.name
-            for m in genai.list_models()
-            if "generateContent" in getattr(m, "supported_generation_methods", [])
-        ]
-
-        # 2. 優先選擇包含 'gemini-1.5-flash' 的模型，否則退回第一個可用模型
-        target_model = next(
-            (m for m in available_models if "gemini-1.5-flash" in m), None
-        )
-        if not target_model:
-            target_model = available_models[0] if available_models else "models/gemini-1.5-flash"
-
+        available_models = [m.name for m in genai.list_models() if "generateContent" in m.supported_generation_methods]
+        target_model = next((m for m in available_models if "gemini-1.5-flash" in m), available_models[0])
         model = genai.GenerativeModel(model_name=target_model)
-        # st.success(f"已成功加载模型: {target_model}")  # 如需調試可打開
     except Exception as e:
-        st.error(f"无法获取模型列表，请检查 API Key 是否有效: {e}")
-        # 保底方案：仍嘗試使用通用名稱
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        st.error(f"模型加载失败: {e}")
+        model = None
 
-    customer_input = st.text_area(
-        "粘贴客户的询盘 (Paste customer query here):",
-        placeholder="e.g. Why is it so expensive?",
-    )
+    # 5. 侧边栏控制
+    with st.sidebar:
+        st.header("控制面板")
+        if st.button("清除对话记录"):
+            st.session_state.messages = []
+            st.rerun()
+        st.markdown("---")
+        st.info("💡 系统已加载 SOP 与产品手册，现在拥有上下文记忆。")
 
-    if st.button("生成专家回复"):
-        if customer_input:
-            with st.spinner("Gemini 正在分析 SOP 并组织语言..."):
-                # 构建 Prompt（全功能增强版）
-                prompt = f"""
-                You are a Scent Curator for Cold-Infused Incense. 
-                Your goal: Provide a professional analysis and a short, warm, human-like reply.
-                
-                【Format Requirement】
-                You MUST respond in the following structure:
-                
-                ### 1. 内部逻辑分析 (Internal Analysis)
-                - **SOP 阶段**: [具体阶段名称]
-                - **意图与心理**: [分析客户现在的心理状态和痛点]
-                
-                ### 2. 建议回复 (English Reply)
-                [Write a 1-3 sentence response in elegant, warm, and natural English]
-                
-                ### 3. 中文对应参考 (Translation)
-                [提供上述英文回复的中文翻译，方便我核对]
+    # 6. 显示历史聊天记录
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
 
-                ---
-                【Context】
-                SOP: {sop_content}
-                Products: {product_content}
+    # 7. 用户输入逻辑
+    if prompt_input := st.chat_input("粘贴客户的话..."):
+        # 显示用户消息
+        with st.chat_message("user"):
+            st.markdown(prompt_input)
+        st.session_state.messages.append({"role": "user", "content": prompt_input})
 
-                【Customer Message】
-                {customer_input}
-                """
+        # 8. 核心 Prompt 整合
+        # 包含了品牌语调、SOP逻辑、感官叙事要求
+        system_instruction = f"""
+        You are a sophisticated Scent Curator and Wellness Consultant for "Cold-Infused Incense".
+        Your tone is Elegant, Professional, Empathetic, and Zen-like.
 
-                try:
-                    response = model.generate_content(prompt)
-                    # 这样可以让结果显示得更漂亮
-                    st.subheader("💡 处理建议")
-                    st.markdown(response.text)
-                except Exception as e:
-                    st.error(f"发生错误: {e}")
-        else:
-            st.warning("请先输入客户内容")
+        【Knowledge Base】
+        SOP Guidance: {sop_content}
+        Product Catalog & Stories: {product_content}
 
+        【Instruction Rules】
+        1. CONCISE: English replies must be warm and human-like, within 1-3 sentences.
+        2. NO JARGON: Use "Ancient Artisan Craft", "Living Scent", "Bespoke Consultation".
+        3. NO HARD SELL: Be a helpful, knowledgeable friend first.
+        4. STRUCTURE: You MUST respond in this format:
+           ### 1. 内部逻辑分析 (Internal Analysis)
+           - SOP阶段: [判断阶段]
+           - 意图分析: [分析客户痛点与心理]
+
+           ### 2. 建议回复 (English Reply)
+           [Elegant & Natural English Reply]
+
+           ### 3. 中文对应参考 (Translation)
+           [中文翻译]
+        """
+
+        # 获取最近几轮对话上下文
+        context_history = "\n".join([f"{m['role']}: {m['content']}" for m in st.session_state.messages[-5:]])
+        final_prompt = f"{system_instruction}\n\nRecent History:\n{context_history}\n\nLatest Query: {prompt_input}"
+
+        # 9. 调用 AI 生成回复
+        if model:
+            with st.chat_message("assistant"):
+                with st.spinner("正在思考最地道的表达..."):
+                    try:
+                        response = model.generate_content(final_prompt)
+                        full_response = response.text
+                        st.markdown(full_response)
+                        st.session_state.messages.append({"role": "assistant", "content": full_response})
+                    except Exception as e:
+                        st.error(f"生成失败: {e}")
