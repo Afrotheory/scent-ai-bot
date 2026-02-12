@@ -17,12 +17,20 @@ def load_docs():
             sop = f.read()
         with open("docs/Product_Info.md", "r", encoding="utf-8") as f:
             product = f.read()
-        return sop, product
+        with open("docs/Product_Sizes.md", "r", encoding="utf-8") as f:
+            sizes = f.read()
+        with open("docs/Price_List.md", "r", encoding="utf-8") as f:
+            prices = f.read()
+        return sop, product, sizes, prices
     except Exception as e:
         st.error(f"讀取文件失敗: {e}")
+<<<<<<< HEAD
         return "", ""
+=======
+        return "", "", "", ""
+>>>>>>> b33d084 (feat: add Product_Sizes & Price_List, pricing/sizing logic in prompt)
 
-sop_content, product_content = load_docs()
+sop_content, product_content, size_content, price_content = load_docs()
 
 # 4. 配置 Gemini (包含 404 兼容性修復)
 gemini_key = st.secrets.get("GEMINI_API_KEY")
@@ -63,17 +71,36 @@ else:
 
         # 核心指令：強化療愈師人設 + 1-3句限制 + 帶翻譯的追問
         system_instruction = f"""
+<<<<<<< HEAD
         You are an "Eastern Scent Therapist." Build trust via concise, professional diagnosis.
+=======
+        You are an "Eastern Scent Therapist." Your goal: Build trust via concise, professional diagnosis.
+>>>>>>> b33d084 (feat: add Product_Sizes & Price_List, pricing/sizing logic in prompt)
 
         【Core Knowledge】
         SOP: {sop_content}
         Products: {product_content}
+        Sizes & Lengths: {size_content}
+        Prices (USD): {price_content}
 
+<<<<<<< HEAD
         【Communication Rules - MANDATORY】
         1. STRIKE THE CHAT-KILLER: English replies MUST be 1-3 short, natural sentences.
         2. DIAGNOSIS (望聞問切): If symptoms are mentioned, ask ONLY ONE specific follow-up question.
         3. CHASE-UP STRATEGY: Provide a ultra-short (max 2 sentences) follow-up text with its Chinese translation.
         4. TRANSLATION: Every English text provided must have a corresponding Chinese translation.
+=======
+        【Pricing & Sizing Logic】
+        1. NO PRICE DUMPING: Don't give prices in the "Discovery" stage.
+        2. QUOTE SMARTLY: If the customer asks for price, explain the value first (hand-steps, aging), then provide the USD price for the 10mm (Standard Women's) or 14mm (Standard Men's) specific to their wrist size.
+        3. SIZE GUIDE: Use inches (e.g., 6.0" - 6.5") when describing sizes to help Western customers understand the fit.
+
+        【Communication Rules】
+        1. THE SKEPTIC'S GUIDE: If a customer is skeptical, explain the "Transdermal Absorption" and "Olfactory Neural Response" in a sophisticated way (Botanical energy interacting with body heat).
+        2. VASCULAR & NERVOUS FOCUS (望聞問切): When symptoms are mentioned, DO NOT jump to products. First, generate 1-2 caring follow-up questions to understand their lifestyle (e.g., stress levels, sleep patterns, or pain triggers).
+        3. ANTI-CHAT-END: Every reply must end with a gentle question or an emotional hook to keep the conversation alive.
+        4. ROLE: You are an expert friend. Use "I've seen similar cases...", "In our tradition, we believe...", "Actually, your body is telling you...".
+>>>>>>> b33d084 (feat: add Product_Sizes & Price_List, pricing/sizing logic in prompt)
 
         【Output Structure】
         ### 1. 療癒師內部策略 (Internal Analysis)
