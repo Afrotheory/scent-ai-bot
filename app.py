@@ -2,8 +2,9 @@ import streamlit as st
 import google.generativeai as genai
 
 # 1. 頁面配置
-st.set_page_config(page_title="Scent Curator Assistant", layout="centered")
-st.title("🏯 東方香禮跨境營銷助手 (專業版)")
+st.set_page_config(page_title="Scent Curator Assistant", layout="wide")
+st.title("🏯 東方香禮跨境行銷專業助手")
+st.markdown("---")
 
 # 2. 初始化對話記憶
 if "messages" not in st.session_state:
@@ -13,119 +14,106 @@ if "messages" not in st.session_state:
 @st.cache_data
 def load_docs():
     try:
-        with open("docs/SOP_Flow.md", "r", encoding="utf-8") as f:
-            sop = f.read()
-        with open("docs/Product_Info.md", "r", encoding="utf-8") as f:
-            product = f.read()
-        with open("docs/Product_Sizes.md", "r", encoding="utf-8") as f:
-            sizes = f.read()
-        with open("docs/Price_List.md", "r", encoding="utf-8") as f:
-            prices = f.read()
-        return sop, product, sizes, prices
+        paths = {
+            "sop": "docs/SOP_Flow.md",
+            "product": "docs/Product_Info.md",
+            "sizes": "docs/Product_Sizes.md",
+            "prices": "docs/Price_List.md"
+        }
+        content = {}
+        for key, path in paths.items():
+            with open(path, "r", encoding="utf-8") as f:
+                content[key] = f.read()
+        return content
     except Exception as e:
-        st.error(f"讀取文件失敗: {e}")
-<<<<<<< HEAD
-        return "", ""
-=======
-        return "", "", "", ""
->>>>>>> b33d084 (feat: add Product_Sizes & Price_List, pricing/sizing logic in prompt)
+        st.error(f"讀取文件失敗，請確保 docs 資料夾內有對應的 MD 文件: {e}")
+        return None
 
-sop_content, product_content, size_content, price_content = load_docs()
+docs = load_docs()
 
-# 4. 配置 Gemini (包含 404 兼容性修復)
+# 4. 配置 Gemini
 gemini_key = st.secrets.get("GEMINI_API_KEY")
-if not gemini_key:
-    st.error("請在 Secrets 中配置 GEMINI_API_KEY")
+if not gemini_key or not docs:
+    st.warning("請檢查 Secrets 配置或 docs 文件是否完整。")
 else:
     genai.configure(api_key=gemini_key)
-    
-    # 動態獲取模型名稱，防止硬編碼 404
+
     @st.cache_resource
     def get_model():
         try:
-            # 優先尋找 1.5-flash，若無則選第一個支持生成內容的模型
             models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
             target = next((m for m in models if 'gemini-1.5-flash' in m), models[0])
             return genai.GenerativeModel(model_name=target)
         except Exception:
-            # 保底方案
             return genai.GenerativeModel('gemini-1.5-flash')
 
     model = get_model()
 
+    # --- 側邊欄：功能與清理 ---
     with st.sidebar:
+        st.header("⚙️ 設定")
+        mode = st.radio("選擇操作模式 (Mode):",
+                        ["分析客戶詢盤 (Diagnosis)", "創作/翻譯回覆 (Creative Translation)"])
         if st.button("清除對話記錄 (Clear Chat)"):
             st.session_state.messages = []
             st.rerun()
+        st.info("💡 「分析模式」用於判斷客戶意圖；「創作模式」幫你把中文點子變為地道英文。")
 
-    # 5. 顯示歷史對話
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+    # 5. 主界面佈局
+    if mode == "分析客戶詢盤 (Diagnosis)":
+        user_input = st.text_area("👉 粘貼客戶的原話 (Paste Customer Query):", height=150, placeholder="例如: I have trouble sleeping, what do you recommend?")
+        instruction_type = "DIAGNOSTIC_ANALYSIS"
+    else:
+        user_input = st.text_area("👉 輸入你想表達的中文要點 (What do you want to say?):", height=150, placeholder="例如: 告訴他麒麟竭適合運動損傷，我們需要45天窖藏，所以現在只有少量現貨。")
+        instruction_type = "CREATIVE_RESPONSE"
 
-    # 6. 用戶輸入與處理
-    if prompt := st.chat_input("在此粘貼客戶的話..."):
-        with st.chat_message("user"):
-            st.markdown(prompt)
-        st.session_state.messages.append({"role": "user", "content": prompt})
+    if st.button("生成專家方案 (Generate)"):
+        if not user_input:
+            st.warning("請先輸入內容再生成。")
+        else:
+            # 6. 核心系統指令構建
+            system_instruction = f"""
+            You are a "Scent Healing Mentor." Build trust via professionalism and elegance.
 
-        # 核心指令：強化療愈師人設 + 1-3句限制 + 帶翻譯的追問
-        system_instruction = f"""
-<<<<<<< HEAD
-        You are an "Eastern Scent Therapist." Build trust via concise, professional diagnosis.
-=======
-        You are an "Eastern Scent Therapist." Your goal: Build trust via concise, professional diagnosis.
->>>>>>> b33d084 (feat: add Product_Sizes & Price_List, pricing/sizing logic in prompt)
+            【Library】
+            - SOP: {docs['sop']}
+            - Products: {docs['product']}
+            - Sizes: {docs['sizes']}
+            - Prices: {docs['prices']}
 
-        【Core Knowledge】
-        SOP: {sop_content}
-        Products: {product_content}
-        Sizes & Lengths: {size_content}
-        Prices (USD): {price_content}
+            【Rules】
+            1. TONE: Elegant, empathetic, and Zen-like.
+            2. CONCISE: English output must be 1-3 sentences. No long paragraphs.
+            3. PRICING: If asked about price, quote USD strictly from the list.
+            4. MODE - {instruction_type}:
+               - If DIAGNOSTIC: Analyze the customer's SOP stage and pain points. Ask ONE professional follow-up question.
+               - If CREATIVE: Translate the user's Chinese points into elegant English, integrating specific product terms like "Cellar-aged" or "13 sacred hand-steps" from the library.
+            """
 
-<<<<<<< HEAD
-        【Communication Rules - MANDATORY】
-        1. STRIKE THE CHAT-KILLER: English replies MUST be 1-3 short, natural sentences.
-        2. DIAGNOSIS (望聞問切): If symptoms are mentioned, ask ONLY ONE specific follow-up question.
-        3. CHASE-UP STRATEGY: Provide a ultra-short (max 2 sentences) follow-up text with its Chinese translation.
-        4. TRANSLATION: Every English text provided must have a corresponding Chinese translation.
-=======
-        【Pricing & Sizing Logic】
-        1. NO PRICE DUMPING: Don't give prices in the "Discovery" stage.
-        2. QUOTE SMARTLY: If the customer asks for price, explain the value first (hand-steps, aging), then provide the USD price for the 10mm (Standard Women's) or 14mm (Standard Men's) specific to their wrist size.
-        3. SIZE GUIDE: Use inches (e.g., 6.0" - 6.5") when describing sizes to help Western customers understand the fit.
-
-        【Communication Rules】
-        1. THE SKEPTIC'S GUIDE: If a customer is skeptical, explain the "Transdermal Absorption" and "Olfactory Neural Response" in a sophisticated way (Botanical energy interacting with body heat).
-        2. VASCULAR & NERVOUS FOCUS (望聞問切): When symptoms are mentioned, DO NOT jump to products. First, generate 1-2 caring follow-up questions to understand their lifestyle (e.g., stress levels, sleep patterns, or pain triggers).
-        3. ANTI-CHAT-END: Every reply must end with a gentle question or an emotional hook to keep the conversation alive.
-        4. ROLE: You are an expert friend. Use "I've seen similar cases...", "In our tradition, we believe...", "Actually, your body is telling you...".
->>>>>>> b33d084 (feat: add Product_Sizes & Price_List, pricing/sizing logic in prompt)
-
-        【Output Structure】
-        ### 1. 療癒師內部策略 (Internal Analysis)
-        - **SOP 階段**: [目前階段]
-        - **望聞問切 (Diagnosis)**: [分析症狀，並給出一個精準的專業詢問點]
-        - **追問策略 (Chase-up)**: [若客戶沒回，可用短句]
-        - **追問中文翻譯**: [翻譯上面的追問短句]
-        - **策略意圖**: [為什麼這樣能轉化]
-
-        ### 2. 建議英文回覆 (The Mentor's Reply)
-        [1-3 sentences of elegant English. Must end with a gentle question.]
-
-        ### 3. 中文參考 (Translation)
-        [上述英文回覆的對應中文]
-        """
-
-        with st.chat_message("assistant"):
-            with st.spinner("思考中..."):
+            with st.spinner("AI 正在結合產品知識庫思考中..."):
                 try:
-                    history = "\n".join([f"{m['role']}: {m['content']}" for m in st.session_state.messages[-5:]])
-                    full_query = f"{system_instruction}\n\nRecent History:\n{history}\n\nLatest Query: {prompt}"
-                    
-                    response = model.generate_content(full_query)
-                    answer = response.text
-                    st.markdown(answer)
-                    st.session_state.messages.append({"role": "assistant", "content": answer})
+                    # 獲取最近對話背景
+                    history = "\n".join([f"{m['role']}: {m['content']}" for m in st.session_state.messages[-3:]])
+
+                    if instruction_type == "DIAGNOSTIC_ANALYSIS":
+                        query = f"{system_instruction}\n\n[Analyze this customer]: {user_input}\n\n[History]: {history}"
+                    else:
+                        query = f"{system_instruction}\n\n[Translate and polish this Chinese idea into mentor-style English]: {user_input}\n\n[History]: {history}"
+
+                    response = model.generate_content(query)
+
+                    # 7. 顯示結果
+                    st.markdown("---")
+                    st.subheader("💡 專家建議方案")
+                    st.markdown(response.text)
+
+                    # 記錄對話
+                    st.session_state.messages.append({"role": "user", "content": user_input})
+                    st.session_state.messages.append({"role": "assistant", "content": response.text})
                 except Exception as e:
                     st.error(f"發生錯誤: {e}")
+
+    # 顯示歷史紀錄 (折疊顯示)
+    with st.expander("📜 查看最近對話歷史"):
+        for m in st.session_state.messages:
+            st.write(f"**{m['role']}**: {m['content']}")
