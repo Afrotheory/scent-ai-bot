@@ -123,11 +123,13 @@ else:
             if mode == "🔍 診斷模式 (Diagnosis)":
                 mode_specific_rule = (
                     "In Section 1, SOP stage is REQUIRED and cannot be omitted. "
-                    "Also include pain-point mapping to one concrete product family."
+                    "Also include pain-point mapping to one concrete product family. "
+                    "Section 1 must include a Chinese translation for the logic points."
                 )
             else:
                 mode_specific_rule = (
-                    "In Creative mode, do not output SOP stage. Focus on polished translation and persuasive product storytelling."
+                    "In Creative mode, do not output SOP stage. Focus on polished translation and persuasive product storytelling. "
+                    "Section 1 still needs a short Chinese translation of the creative intent."
                 )
 
             # 核心指令：強制知識庫優先
@@ -143,6 +145,7 @@ else:
             Regardless of mode, always structure as:
             ### 1. 療癒師內部邏輯 (Logic & Strategy)
             - [Modes specifics: TCM diagnosis or Creative intent]
+            - [Chinese Translation of Section 1: translate your logic/strategy into concise Chinese]
             - [Suggested chase-up strategy + Chinese translation]
             
             ### 2. 建議英文回覆 (Mentor's Reply)
@@ -182,44 +185,52 @@ else:
                     image_df = load_image_map()
 
                     if image_df is not None:
-                        matched_products = []
-                        seen_slugs = set()
-                        search_corpus = f"{user_input}\n{answer}".lower()
+                        # 只根據 AI 回覆內容匹配，避免按客戶原話誤觸發多產品
+                        answer_lower = answer.lower()
+                        section2_match = re.search(
+                            r"###\s*2\..*?(?=###\s*3\.|$)",
+                            answer,
+                            flags=re.IGNORECASE | re.DOTALL,
+                        )
+                        target_text = section2_match.group(0).lower() if section2_match else answer_lower
 
-                        # 遍歷 CSV 中的每一行進行匹配（關鍵詞全文檢索）
+                        best_product = None
+                        best_score = 0
+
+                        # 選擇「最像被推薦的那一款」，只展示該產品兩張圖
                         for _, row in image_df.iterrows():
                             original_name = str(row.get("Original Name", ""))
                             slug = str(row.get("English Slug", ""))
 
-                            # 從產品名稱提取中英關鍵詞，提升匹配成功率
                             split_tokens = re.split(r"[\\/，,、\s()（）\-]+", original_name)
                             keywords = [original_name, slug] + split_tokens
                             keywords = [k.strip().lower() for k in keywords if len(k.strip()) >= 2]
 
-                            if any(k in search_corpus for k in keywords):
-                                if slug not in seen_slugs:
-                                    matched_products.append(row)
-                                    seen_slugs.add(slug)
+                            score = sum(1 for k in keywords if k in target_text)
+                            if score > best_score:
+                                best_score = score
+                                best_product = row
 
-                        if matched_products:
-                            for prod in matched_products:
-                                st.write(f"✅ **檢索到產品庫存: {prod['Original Name']}**")
-                                c1, c2 = st.columns(2)
-                                # 從 CSV 讀取對應的檔案名
-                                style_img = f"images/{prod['Style Image Filename']}"
-                                ing_img = f"images/{prod['Ingredients Image Filename']}"
+                        if best_product is not None and best_score > 0:
+                            prod = best_product
+                            st.write(f"✅ **推薦產品視覺素材: {prod['Original Name']}**")
+                            c1, c2 = st.columns(2)
+                            style_img = f"images/{prod['Style Image Filename']}"
+                            ing_img = f"images/{prod['Ingredients Image Filename']}"
 
-                                with c1:
-                                    if os.path.exists(style_img):
-                                        st.image(style_img, caption=f"{prod['Original Name']} - 款式圖")
-                                    else:
-                                        st.warning(f"缺少圖片檔案: {prod['Style Image Filename']}")
+                            with c1:
+                                if os.path.exists(style_img):
+                                    st.image(style_img, caption=f"{prod['Original Name']} - 款式圖")
+                                else:
+                                    st.warning(f"缺少圖片檔案: {prod['Style Image Filename']}")
 
-                                with c2:
-                                    if os.path.exists(ing_img):
-                                        st.image(ing_img, caption=f"{prod['Original Name']} - 配方功效圖")
+                            with c2:
+                                if os.path.exists(ing_img):
+                                    st.image(ing_img, caption=f"{prod['Original Name']} - 配方功效圖")
+                                else:
+                                    st.warning(f"缺少圖片檔案: {prod['Ingredients Image Filename']}")
                         else:
-                            st.info("未檢索到特定產品圖片，請檢查輸入是否包含產品全名。")
+                            st.info("未檢索到推薦產品圖片，請在英文回覆中明確提及具體產品名稱。")
                     else:
                         st.error("找不到 product_image_filenames.csv，請確保檔案已上傳至 docs/ 目錄。")
 
