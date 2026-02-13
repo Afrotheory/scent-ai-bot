@@ -2,6 +2,7 @@ import streamlit as st
 import google.generativeai as genai
 import os
 import pandas as pd
+import re
 
 # 1. 頁面配置
 st.set_page_config(page_title="Scent Curator Assistant", layout="wide")
@@ -73,7 +74,8 @@ else:
         TASK: DIAGNOSTIC_ANALYSIS
         1. CROSS-REFERENCE: Use the TCM Library ({lib['tcm']}) to find the specific syndrome.
         2. SOP: Identify the stage from {lib['sop']}.
-        3. OUTPUT: Strategy -> English Response -> Translation.
+        3. MANDATORY OUTPUT: You MUST explicitly state SOP stage in Section 1, e.g. "Stage 3: Education & Storytelling".
+        4. OUTPUT: Strategy -> English Response -> Translation.
         """
     elif mode == "✍️ 創作模式 (Creative/Translation)":
         user_input = st.text_area("👉 輸入你想表達的中醫點子 / 銷售要點:", height=180, placeholder="告訴他黑龍涎能消積利水，契合結石調理思路...")
@@ -118,6 +120,16 @@ else:
         if not user_input:
             st.warning("請輸入內容。")
         else:
+            if mode == "🔍 診斷模式 (Diagnosis)":
+                mode_specific_rule = (
+                    "In Section 1, SOP stage is REQUIRED and cannot be omitted. "
+                    "Also include pain-point mapping to one concrete product family."
+                )
+            else:
+                mode_specific_rule = (
+                    "In Creative mode, do not output SOP stage. Focus on polished translation and persuasive product storytelling."
+                )
+
             # 核心指令：強制知識庫優先
             system_instruction = f"""
             You are a "Master Scent Therapist."
@@ -138,6 +150,9 @@ else:
 
             ### 3. 中文參考 (Translation)
             [Accurate Chinese translation of Section 2.]
+
+            【Mode-specific Constraint】
+            {mode_specific_rule}
             """
 
             with st.spinner("AI 正在深度檢索中醫知識庫..."):
@@ -168,12 +183,23 @@ else:
 
                     if image_df is not None:
                         matched_products = []
-                        # 遍歷 CSV 中的每一行進行匹配
-                        for index, row in image_df.iterrows():
-                            original_name = str(row["Original Name"])
-                            # 只要用戶輸入或 AI 回覆中包含產品名稱（支持部分匹配）
-                            if original_name in user_input or original_name in answer:
-                                matched_products.append(row)
+                        seen_slugs = set()
+                        search_corpus = f"{user_input}\n{answer}".lower()
+
+                        # 遍歷 CSV 中的每一行進行匹配（關鍵詞全文檢索）
+                        for _, row in image_df.iterrows():
+                            original_name = str(row.get("Original Name", ""))
+                            slug = str(row.get("English Slug", ""))
+
+                            # 從產品名稱提取中英關鍵詞，提升匹配成功率
+                            split_tokens = re.split(r"[\\/，,、\s()（）\-]+", original_name)
+                            keywords = [original_name, slug] + split_tokens
+                            keywords = [k.strip().lower() for k in keywords if len(k.strip()) >= 2]
+
+                            if any(k in search_corpus for k in keywords):
+                                if slug not in seen_slugs:
+                                    matched_products.append(row)
+                                    seen_slugs.add(slug)
 
                         if matched_products:
                             for prod in matched_products:
