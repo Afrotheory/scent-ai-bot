@@ -239,20 +239,56 @@ else:
 
                         best_product = None
                         best_score = 0
+                        stopwords = {
+                            "the", "and", "for", "with", "from", "into", "this", "that",
+                            "of", "in", "to", "a", "an", "is", "on", "by", "or",
+                        }
+
+                        # 明确别名优先（避免“孔韻迷迭”这类推荐被通用词干扰）
+                        direct_alias_map = {
+                            "confucian_charm_rosemary": [
+                                "孔韻迷迭", "孔韵迷迭", "kong yun mi die",
+                                "confucius rosemary", "confucian charm rosemary", "confucian charm",
+                            ],
+                            "soul_of_shupo": ["蜀魄", "泣血蜀魄", "烈火蜀魄", "soul of shupo", "shupo"],
+                            "qi_lin_blood_resin": ["麒麟竭", "龙瑞", "龍瑞", "dragon's blood", "qi lin blood"],
+                            "imperial_dragon_s_nectar": ["黑龍涎", "黑龙涎", "imperial black dragon nectar"],
+                            "white_dragon_s_realm": ["白龍涎", "白龙涎", "white dragon"],
+                            "red_musk": ["紅麝", "红麝", "四合香", "red musk", "four-in-one"],
+                            "an_gong_niu_huang": ["安宮牛黃", "安宫牛黄", "an gong niu huang"],
+                            "fu_yan_nian": ["傅延年", "fu yan nian"],
+                            "the_jiaofang": ["漢宮椒房", "汉宫椒房", "jiaofang"],
+                        }
+
+                        for slug_key, aliases in direct_alias_map.items():
+                            if any(alias.lower() in target_text for alias in aliases):
+                                row = slug_to_row.get(slug_key)
+                                if row is not None:
+                                    best_product = row
+                                    best_score = 999  # 直接命中优先级最高
+                                    break
 
                         # 選擇「最像被推薦的那一款」，只展示該產品兩張圖
-                        for _, row in image_df.iterrows():
-                            original_name = str(row.get("Original Name", ""))
-                            slug = str(row.get("English Slug", ""))
+                        if best_score < 999:
+                            for _, row in image_df.iterrows():
+                                original_name = str(row.get("Original Name", ""))
+                                slug = str(row.get("English Slug", ""))
 
-                            split_tokens = re.split(r"[\\/，,、\s()（）\-]+", original_name)
-                            keywords = [original_name, slug] + split_tokens
-                            keywords = [k.strip().lower() for k in keywords if len(k.strip()) >= 2]
+                                split_tokens = re.split(r"[\\/，,、\s()（）\-]+", original_name)
+                                keywords = [k.strip().lower() for k in ([original_name, slug] + split_tokens) if len(k.strip()) >= 2]
+                                keywords = [k for k in keywords if k not in stopwords and len(k) >= 3]
 
-                            score = sum(1 for k in keywords if k in target_text)
-                            if score > best_score:
-                                best_score = score
-                                best_product = row
+                                # 加权打分：完整命中 > slug 命中 > 关键词命中
+                                score = 0
+                                if original_name.lower() in target_text:
+                                    score += 8
+                                if slug.lower() in target_text:
+                                    score += 8
+                                score += sum(1 for k in keywords if k in target_text)
+
+                                if score > best_score:
+                                    best_score = score
+                                    best_product = row
 
                         if best_product is not None and best_score > 0:
                             prod = best_product
@@ -278,9 +314,14 @@ else:
                                     name2 = str(row.get("Original Name", ""))
                                     slug2 = str(row.get("English Slug", ""))
                                     tokens2 = re.split(r"[\\/，,、\s()（）\-]+", name2)
-                                    kws2 = [name2, slug2] + tokens2
-                                    kws2 = [k.strip().lower() for k in kws2 if len(k.strip()) >= 2]
-                                    score2 = sum(1 for k in kws2 if k in target_text)
+                                    kws2 = [k.strip().lower() for k in ([name2, slug2] + tokens2) if len(k.strip()) >= 2]
+                                    kws2 = [k for k in kws2 if k not in stopwords and len(k) >= 3]
+                                    score2 = 0
+                                    if name2.lower() in target_text:
+                                        score2 += 8
+                                    if slug2.lower() in target_text:
+                                        score2 += 8
+                                    score2 += sum(1 for k in kws2 if k in target_text)
                                     if score2 > best_available_score:
                                         best_available_score = score2
                                         best_available = row
