@@ -4,173 +4,180 @@ import os
 
 # 1. 頁面配置
 st.set_page_config(page_title="Scent Curator Assistant", layout="wide")
-st.title("🏯 東方香禮跨境行銷專業助手")
+st.title("🏯 東方香禮：中醫合香百科專家系統")
 st.markdown("---")
 
 # 2. 初始化對話記憶
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# 3. 讀取知識庫
+# 3. 讀取知識庫 (核心：優先加載 TCM 百科)
 @st.cache_data
-def load_docs():
+def load_all_libraries():
     try:
-        docs = {}
-        files = {
+        paths = {
+            "tcm": "docs/TCM_Knowledge.md",
             "sop": "docs/SOP_Flow.md",
             "product": "docs/Product_Info.md",
             "sizes": "docs/Product_Sizes.md",
             "prices": "docs/Price_List.md"
         }
-        for key, path in files.items():
+        lib = {}
+        for key, path in paths.items():
             if os.path.exists(path):
                 with open(path, "r", encoding="utf-8") as f:
-                    docs[key] = f.read()
+                    lib[key] = f.read()
             else:
-                docs[key] = f"未找到文件: {path}"
-        return docs
+                lib[key] = "" # 容錯處理
+        return lib
     except Exception as e:
-        st.error(f"讀取文檔出錯: {e}")
+        st.error(f"讀取資料庫失敗: {e}")
         return None
 
-docs_content = load_docs()
+lib = load_all_libraries()
 
-# 4. 配置 Gemini
+# 4. 配置 Gemini 引擎
 gemini_key = st.secrets.get("GEMINI_API_KEY")
-if not gemini_key:
-    st.error("請在 Secrets 中配置 GEMINI_API_KEY")
-elif not docs_content:
-    st.warning("請檢查 docs 資料夾內是否有 SOP_Flow.md、Product_Info.md、Product_Sizes.md、Price_List.md。")
+if not gemini_key or not lib:
+    st.error("系統配置未完成，請檢查 API Key 或 docs 文件。")
 else:
     genai.configure(api_key=gemini_key)
-
+    
     @st.cache_resource
-    def get_model():
+    def get_brain():
         try:
             models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
             target = next((m for m in models if 'gemini-1.5-flash' in m), models[0])
             return genai.GenerativeModel(model_name=target)
-        except Exception:
+        except:
             return genai.GenerativeModel('gemini-1.5-flash')
 
-    model = get_model()
+    model = get_brain()
 
-    # --- 側邊欄：模式選擇 ---
+    # --- 側邊欄：控制中心 ---
     with st.sidebar:
-        st.header("⚙️ 操作中心")
-        mode = st.radio("功能切換:", ["分析客戶詢盤 (Diagnosis)", "輔助我寫回覆 (Creative Mode)"])
-        if st.button("清除對話記錄"):
+        st.header("⚙️ 模式切換")
+        mode = st.radio("當前任務 (Select Task):", 
+                        ["🔍 診斷模式 (Diagnosis)", "✍️ 創作模式 (Creative/Translation)", "📊 產品導航 (Catalog & Pricing)"])
+        st.divider()
+        if st.button("🧹 清理對話歷史"):
             st.session_state.messages = []
             st.rerun()
-        st.divider()
-        st.caption("版本: v2.5 (視覺強化版)")
+        st.caption("AI 核心已連結：TCM_Knowledge.md")
 
-    # 5. 輸入區
-    if mode == "分析客戶詢盤 (Diagnosis)":
-        user_input = st.text_area("👉 粘貼客戶的原話:", height=150, placeholder="例如: I've been feeling very stressed lately...")
-        instruction = "分析客戶目前的SOP階段、潛在痛點，並給出專業建議和1-3句的英文回覆。最後必須提供中文翻譯。"
+    # 5. 輸入界面佈局
+    if mode == "🔍 診斷模式 (Diagnosis)":
+        user_input = st.text_area("👉 粘貼客戶諮詢原話:", height=180, placeholder="客戶說膝蓋冷痛...")
+        mode_instruction = f"""
+        TASK: DIAGNOSTIC_ANALYSIS
+        1. CROSS-REFERENCE: Use the TCM Library ({lib['tcm']}) to find the specific syndrome.
+        2. SOP: Identify the stage from {lib['sop']}.
+        3. OUTPUT: Strategy -> English Response -> Translation.
+        """
     else:
-        user_input = st.text_area("👉 輸入你想表達的中文點子:", height=150, placeholder="例如: 告訴他麒麟竭適合運動後消腫，建議他買14mm的。")
-        instruction = "將我的中文點子轉化為地道、優雅的療癒師口吻英文。必須包含產品特點，控制在3句內，並提供中文翻譯。"
+        user_input = st.text_area("👉 輸入你想表達的中醫點子 / 銷售要點:", height=180, placeholder="告訴他黑龍涎能消積利水，契合結石調理思路...")
+        mode_instruction = f"""
+        TASK: CREATIVE_TRANSLATION
+        1. NO SOP: Skip SOP analysis entirely.
+        2. TCM ENHANCEMENT: Extract professional logic (e.g., 'Fluid Metabolism', 'Stagnation Clearing') from {lib['tcm']} based on the user's input.
+        3. POLISH: Translate the ideas into high-end, elegant English.
+        """
+    else:
+        st.header("📊 全品類中英對照及報價清單")
+        st.info("💡 提示：你可以使用下表右上角的放大鏡或搜尋功能快速查找產品名稱或尺寸。")
 
-    if st.button("生成專家方案", type="primary"):
+        try:
+            import pandas as pd
+
+            catalog_data = [
+                {"產品": "麒麟竭/龍瑞", "English Name": "Dragon's Blood / Long Rui", "規格": "10mm/14mm/18mm", "供貨價(￥)": "1343起", "最低控價(￥)": "3298起", "起步定價($)": "499起"},
+                {"產品": "泣血蜀魄", "English Name": "Soul of Shupo", "規格": "10mm/14mm/18mm", "供貨價(￥)": "532起", "最低控價(￥)": "1669起", "起步定價($)": "267起"},
+                {"產品": "黑龍涎", "English Name": "Imperial Black Dragon Nectar", "規格": "10mm/14mm/18mm", "供貨價(￥)": "1343起", "最低控價(￥)": "3298起", "起步定價($)": "499起"},
+                {"產品": "紅麝/四合香", "English Name": "Red Musk / Four-in-One", "規格": "10mm/14mm/18mm", "供貨價(￥)": "2567起", "最低控價(￥)": "4068起", "起步定價($)": "609起"},
+                {"產品": "安宮牛黃", "English Name": "An Gong Niu Huang", "規格": "10mm/14mm/18mm", "供貨價(￥)": "1343起", "最低控價(￥)": "3600起", "起步定價($)": "542起"},
+                {"產品": "傅延年", "English Name": "Fu Yan Nian (Vitality)", "規格": "10mm/14mm/18mm", "供貨價(￥)": "2567起", "最低控價(￥)": "4068起", "起步定價($)": "609起"},
+                {"產品": "漢宮椒房", "English Name": "The Jiaofang (Warming)", "規格": "10mm/14mm/18mm", "供貨價(￥)": "1343起", "最低控價(￥)": "3298起", "起步定價($)": "499起"},
+                {"產品": "馬上有錢", "English Name": "Success & Wealth (Horse)", "規格": "香牌 30*36mm", "供貨價(￥)": "36", "最低控價(￥)": "129", "起步定價($)": "-"},
+                {"產品": "人參蓮花", "English Name": "Ginseng Lotus", "規格": "香牌 43*43mm", "供貨價(￥)": "42", "最低控價(￥)": "168", "起步定價($)": "-"},
+            ]
+            df = pd.DataFrame(catalog_data)
+            st.dataframe(df, use_container_width=True, hide_index=True)
+
+            st.divider()
+            st.subheader("📏 尺寸參考 (Size Reference)")
+            size_data = lib.get("sizes", "")
+            st.markdown(size_data if size_data else "未找到尺寸資料。")
+        except Exception as e:
+            st.error(f"表格解析失敗，請手動檢查 Price_List.md 格式。 錯誤: {e}")
+
+        user_input = ""
+        mode_instruction = ""
+
+    if mode != "📊 產品導航 (Catalog & Pricing)" and st.button("🚀 生成專家方案", type="primary"):
         if not user_input:
-            st.warning("請輸入內容")
+            st.warning("請輸入內容。")
         else:
-            # 構建 Prompt
-            system_prompt = f"""
-            You are a "Scent Healing Mentor" (Eastern Scent Therapist).
-            Library:
-            - Products: {docs_content['product']}
-            - SOP: {docs_content['sop']}
-            - Prices: {docs_content['prices']}
-            - Sizes: {docs_content['sizes']}
+            # 核心指令：強制知識庫優先
+            system_instruction = f"""
+            You are a "Master Scent Therapist."
+            MANDATORY: You must prioritize the facts in the provided TCM Library over general AI knowledge.
 
-            Rules:
-            1. Tone: Elegant, Professional, Empathetic.
-            2. Concise: English reply MUST be 1-3 sentences.
-            3. Mandatory Structure:
-               ### 1. 內部診斷與策略
-               - 包含SOP階段、痛點分析、追問建議、以及[追問短句的中文翻譯]。
-               ### 2. 建議英文回覆
-               ### 3. 中文參考 (Translation)
+            【Core Libraries】
+            - TCM Knowledge: {lib['tcm']}
+            - Product Specs: {lib['product']} | {lib['sizes']} | {lib['prices']}
+
+            【Formatting Guide】
+            Regardless of mode, always structure as:
+            ### 1. 療癒師內部邏輯 (Logic & Strategy)
+            - [Modes specifics: TCM diagnosis or Creative intent]
+            - [Suggested chase-up strategy + Chinese translation]
+            
+            ### 2. 建議英文回覆 (Mentor's Reply)
+            [1-3 sentences of Zen-like, professional English.]
+
+            ### 3. 中文參考 (Translation)
+            [Accurate Chinese translation of Section 2.]
             """
 
-            with st.spinner("正在調度產品資料庫與視覺素材..."):
+            with st.spinner("AI 正在深度檢索中醫知識庫..."):
                 try:
                     history = "\n".join([f"{m['role']}: {m['content']}" for m in st.session_state.messages[-3:]])
-                    response = model.generate_content(f"{system_prompt}\n\nTask: {instruction}\nInput: {user_input}\nContext: {history}")
-
+                    full_query = f"{system_instruction}\n\n{mode_instruction}\nInput: {user_input}\nContext: {history}"
+                    
+                    response = model.generate_content(full_query)
+                    answer = response.text
+                    
                     # 顯示文字結果
                     st.markdown("---")
-                    st.subheader("💡 專家回覆建議")
-                    st.markdown(response.text)
-                    st.session_state.messages.append({"role": "user", "content": user_input})
-                    st.session_state.messages.append({"role": "assistant", "content": response.text})
-
-                    # 6. 視覺化圖片匹配模塊
+                    st.subheader("💡 生成結果")
+                    st.markdown(answer)
+                    
+                    # 7. 視覺化組件：圖片自動匹配
                     st.divider()
-                    st.subheader("🖼️ 推薦發送的視覺資料")
-
-                    # --- 35款產品全量映射表 (完整版) ---
+                    st.subheader("🖼️ 推薦視覺素材")
+                    
+                    # 擴展至 35 款產品的 Slug 對應 (部分示例，可按 CSV 繼續補充)
                     product_map = {
-                        # 核心爆款
-                        "麒麟竭": "qi_lin_blood_resin", "Dragon's Blood": "qi_lin_blood_resin", "龙瑞": "qi_lin_blood_resin",
-                        "泣血蜀魄": "soul_of_shupo", "Soul of Shupo": "soul_of_shupo", "烈火蜀魄": "soul_of_shupo",
-                        "大苏合": "grand_suhe_incense", "Grand Suhe": "grand_suhe_incense",
-                        "红麝": "red_musk", "Red Musk": "red_musk",
-
-                        # 高階/中階系列
-                        "五方贵人": "the_five_elemental_guardians", "Five Elemental": "the_five_elemental_guardians",
-                        "安宫牛黄": "an_gong_niu_huang", "An Gong": "an_gong_niu_huang",
-                        "鹅梨": "midnight_pear_in_the_canopy", "Midnight Pear": "midnight_pear_in_the_canopy",
-                        "内府龙涎": "imperial_dragon_s_breath", "Dragon's Breath": "imperial_dragon_s_breath",
-                        "御制白龙涎": "white_dragon_s_realm", "White Dragon": "white_dragon_s_realm",
-                        "御制黑龙涎": "imperial_dragon_s_nectar", "Black Dragon": "imperial_dragon_s_nectar",
-                        "紫油降真": "purple_oil_jiangzhen_incense", "Jiangzhen": "purple_oil_jiangzhen_incense",
-                        "芳华茉莉": "youthful_jasmine", "Youthful Jasmine": "youthful_jasmine",
-                        "花蕊夫人": "madame_huarui", "Madame Huarui": "madame_huarui",
-                        "返魂香": "fantian_xiang", "Return-Soul": "fantian_xiang",
-                        "归元香": "returning_to_the_origin", "Returning to Origin": "returning_to_the_origin",
-                        "孔韵迷迭": "confucian_charm_rosemary", "Confucian Charm": "confucian_charm_rosemary",
-                        "紫气东来": "the_eastern_purple_qi_arrives", "Purple Qi": "the_eastern_purple_qi_arrives",
-                        "傅延年": "fu_yan_nian", "Fu Yan Nian": "fu_yan_nian",
-                        "汉宫椒房": "the_jiaofang", "Jiaofang": "the_jiaofang",
-                        "龙涎紫雪": "long_yan_zi_xue", "Long Yan Zi Xue": "long_yan_zi_xue",
-
-                        # 香牌/其他
-                        "龙瑞凤九": "dragon_phoenix_card",
-                        "马上有钱": "horse_wealth",
-                        "湖蓝龙梅": "blue_imperial_plum_card",
-                        "紫薇讳": "ziwei_talisman",
-                        "苏合香牌": "suhe_card",
-                        "人参莲花": "ginseng_lotus",
-                        "福梳": "blessing_comb",
-                        "茉莉身体乳": "jasmine_lotion",
-                        "松塔": "pine_cone",
-                        "驱疫香": "epidemic_protection",
-                        "安眠安神": "sleep_aid",
-                        "沉香": "agarwood", "檀香": "sandalwood"
+                        "麒麟竭": "qi_lin_blood_resin", "龍瑞": "qi_lin_blood_resin",
+                        "蜀魄": "soul_of_shupo", "泣血": "soul_of_shupo",
+                        "黑龍涎": "grand_suhe_incense", "白龍涎": "white_dragon_s_realm",
+                        "紅麝": "red_musk", "四合香": "red_musk",
+                        "傅延年": "fu_yan_nian", "漢宮椒房": "the_jiaofang"
                     }
 
                     matched = False
                     for key, slug in product_map.items():
-                        if key.lower() in user_input.lower() or key.lower() in response.text.lower():
+                        if key.lower() in user_input.lower() or key.lower() in answer.lower():
                             matched = True
-                            st.write(f"**匹配產品: {key}**")
+                            st.write(f"✅ **匹配資料: {key}**")
                             c1, c2 = st.columns(2)
-                            with c1:
-                                st.image(f"images/{slug}_style.jpg", caption="款式展示图")
-                            with c2:
-                                st.image(f"images/{slug}_ing.jpg", caption="成分功效图")
+                            with c1: st.image(f"images/{slug}_style.jpg", caption="款式展示")
+                            with c2: st.image(f"images/{slug}_ing.jpg", caption="中醫配方/功效")
+                    
+                    if not matched: st.info("未檢索到特定產品圖片。")
 
-                    if not matched:
-                        st.info("當前對話未匹配到特定產品圖片，若需查看請輸入具體產品名稱。")
+                    st.session_state.messages.append({"role": "user", "content": user_input})
+                    st.session_state.messages.append({"role": "assistant", "content": answer})
 
                 except Exception as e:
-                    st.error(f"方案生成失敗: {e}")
-
-    # 顯示對話歷史
-    with st.expander("📜 查看對話歷史"):
-        for m in st.session_state.messages:
-            st.write(f"{m['role']}: {m['content']}")
+                    st.error(f"生成失敗: {e}")
