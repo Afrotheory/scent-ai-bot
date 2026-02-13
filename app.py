@@ -74,7 +74,7 @@ else:
         2. SOP: Identify the stage from {lib['sop']}.
         3. OUTPUT: Strategy -> English Response -> Translation.
         """
-    else:
+    elif mode == "✍️ 創作模式 (Creative/Translation)":
         user_input = st.text_area("👉 輸入你想表達的中醫點子 / 銷售要點:", height=180, placeholder="告訴他黑龍涎能消積利水，契合結石調理思路...")
         mode_instruction = f"""
         TASK: CREATIVE_TRANSLATION
