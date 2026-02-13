@@ -1,6 +1,7 @@
 import streamlit as st
 import google.generativeai as genai
 import os
+import pandas as pd
 
 # 1. 頁面配置
 st.set_page_config(page_title="Scent Curator Assistant", layout="wide")
@@ -152,29 +153,49 @@ else:
                     st.subheader("💡 生成結果")
                     st.markdown(answer)
                     
-                    # 7. 視覺化組件：圖片自動匹配
+                    # --- 視覺化組件：從 CSV 動態匹配圖片 ---
                     st.divider()
                     st.subheader("🖼️ 推薦視覺素材")
-                    
-                    # 擴展至 35 款產品的 Slug 對應 (部分示例，可按 CSV 繼續補充)
-                    product_map = {
-                        "麒麟竭": "qi_lin_blood_resin", "龍瑞": "qi_lin_blood_resin",
-                        "蜀魄": "soul_of_shupo", "泣血": "soul_of_shupo",
-                        "黑龍涎": "grand_suhe_incense", "白龍涎": "white_dragon_s_realm",
-                        "紅麝": "red_musk", "四合香": "red_musk",
-                        "傅延年": "fu_yan_nian", "漢宮椒房": "the_jiaofang"
-                    }
 
-                    matched = False
-                    for key, slug in product_map.items():
-                        if key.lower() in user_input.lower() or key.lower() in answer.lower():
-                            matched = True
-                            st.write(f"✅ **匹配資料: {key}**")
-                            c1, c2 = st.columns(2)
-                            with c1: st.image(f"images/{slug}_style.jpg", caption="款式展示")
-                            with c2: st.image(f"images/{slug}_ing.jpg", caption="中醫配方/功效")
-                    
-                    if not matched: st.info("未檢索到特定產品圖片。")
+                    @st.cache_data
+                    def load_image_map():
+                        csv_path = "docs/product_image_filenames.csv"
+                        if os.path.exists(csv_path):
+                            return pd.read_csv(csv_path)
+                        return None
+
+                    image_df = load_image_map()
+
+                    if image_df is not None:
+                        matched_products = []
+                        # 遍歷 CSV 中的每一行進行匹配
+                        for index, row in image_df.iterrows():
+                            original_name = str(row["Original Name"])
+                            # 只要用戶輸入或 AI 回覆中包含產品名稱（支持部分匹配）
+                            if original_name in user_input or original_name in answer:
+                                matched_products.append(row)
+
+                        if matched_products:
+                            for prod in matched_products:
+                                st.write(f"✅ **檢索到產品庫存: {prod['Original Name']}**")
+                                c1, c2 = st.columns(2)
+                                # 從 CSV 讀取對應的檔案名
+                                style_img = f"images/{prod['Style Image Filename']}"
+                                ing_img = f"images/{prod['Ingredients Image Filename']}"
+
+                                with c1:
+                                    if os.path.exists(style_img):
+                                        st.image(style_img, caption=f"{prod['Original Name']} - 款式圖")
+                                    else:
+                                        st.warning(f"缺少圖片檔案: {prod['Style Image Filename']}")
+
+                                with c2:
+                                    if os.path.exists(ing_img):
+                                        st.image(ing_img, caption=f"{prod['Original Name']} - 配方功效圖")
+                        else:
+                            st.info("未檢索到特定產品圖片，請檢查輸入是否包含產品全名。")
+                    else:
+                        st.error("找不到 product_image_filenames.csv，請確保檔案已上傳至 docs/ 目錄。")
 
                     st.session_state.messages.append({"role": "user", "content": user_input})
                     st.session_state.messages.append({"role": "assistant", "content": answer})
