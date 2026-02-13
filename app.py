@@ -90,28 +90,49 @@ else:
         st.info("💡 提示：你可以使用下表右上角的放大鏡或搜尋功能快速查找產品名稱或尺寸。")
 
         try:
-            import pandas as pd
+            price_md = lib.get("prices", "")
+            if not price_md.strip():
+                st.warning("未找到價格資料文件 Price_List.md")
+            else:
+                st.subheader("📌 來源：Price_List.md（原文）")
+                # 直接显示原文，确保与 Price_List.md 完全一致
+                st.markdown(price_md)
 
-            catalog_data = [
-                {"產品": "麒麟竭/龍瑞", "English Name": "Dragon's Blood / Long Rui", "規格": "10mm/14mm/18mm", "供貨價(￥)": "1343起", "最低控價(￥)": "3298起", "起步定價($)": "499起"},
-                {"產品": "泣血蜀魄", "English Name": "Soul of Shupo", "規格": "10mm/14mm/18mm", "供貨價(￥)": "532起", "最低控價(￥)": "1669起", "起步定價($)": "267起"},
-                {"產品": "黑龍涎", "English Name": "Imperial Black Dragon Nectar", "規格": "10mm/14mm/18mm", "供貨價(￥)": "1343起", "最低控價(￥)": "3298起", "起步定價($)": "499起"},
-                {"產品": "紅麝/四合香", "English Name": "Red Musk / Four-in-One", "規格": "10mm/14mm/18mm", "供貨價(￥)": "2567起", "最低控價(￥)": "4068起", "起步定價($)": "609起"},
-                {"產品": "安宮牛黃", "English Name": "An Gong Niu Huang", "規格": "10mm/14mm/18mm", "供貨價(￥)": "1343起", "最低控價(￥)": "3600起", "起步定價($)": "542起"},
-                {"產品": "傅延年", "English Name": "Fu Yan Nian (Vitality)", "規格": "10mm/14mm/18mm", "供貨價(￥)": "2567起", "最低控價(￥)": "4068起", "起步定價($)": "609起"},
-                {"產品": "漢宮椒房", "English Name": "The Jiaofang (Warming)", "規格": "10mm/14mm/18mm", "供貨價(￥)": "1343起", "最低控價(￥)": "3298起", "起步定價($)": "499起"},
-                {"產品": "馬上有錢", "English Name": "Success & Wealth (Horse)", "規格": "香牌 30*36mm", "供貨價(￥)": "36", "最低控價(￥)": "129", "起步定價($)": "-"},
-                {"產品": "人參蓮花", "English Name": "Ginseng Lotus", "規格": "香牌 43*43mm", "供貨價(￥)": "42", "最低控價(￥)": "168", "起步定價($)": "-"},
-            ]
-            df = pd.DataFrame(catalog_data)
-            st.dataframe(df, use_container_width=True, hide_index=True)
+                # 附加一个可筛选的解析视图（尽量解析；若格式复杂仍以原文为准）
+                rows = []
+                current_product = ""
+                for line in price_md.splitlines():
+                    ln = line.strip()
+                    if not ln.startswith("|"):
+                        continue
+                    parts = [p.strip() for p in ln.split("|")[1:-1]]
+                    if len(parts) < 3:
+                        continue
+                    if parts[0] in {"产品名称", "---"}:
+                        continue
+                    product, spec, usd = parts[0], parts[1], parts[2]
+                    if product:
+                        current_product = product
+                    if current_product and (spec or usd):
+                        rows.append(
+                            {
+                                "產品名稱": current_product,
+                                "規格": spec,
+                                "起步定價（美元）": usd,
+                            }
+                        )
 
-            st.divider()
-            st.subheader("📏 尺寸參考 (Size Reference)")
-            size_data = lib.get("sizes", "")
-            st.markdown(size_data if size_data else "未找到尺寸資料。")
+                if rows:
+                    st.divider()
+                    st.subheader("🔎 快速检索视图（自动解析）")
+                    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+                st.divider()
+                st.subheader("📏 尺寸參考 (Size Reference)")
+                size_data = lib.get("sizes", "")
+                st.markdown(size_data if size_data else "未找到尺寸資料。")
         except Exception as e:
-            st.error(f"表格解析失敗，請手動檢查 Price_List.md 格式。 錯誤: {e}")
+            st.error(f"價格表載入失敗：{e}")
 
         user_input = ""
         mode_instruction = ""
