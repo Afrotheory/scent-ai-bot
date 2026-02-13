@@ -60,7 +60,7 @@ else:
     with st.sidebar:
         st.header("⚙️ 模式切換")
         mode = st.radio("當前任務 (Select Task):", 
-                        ["🔍 診斷模式 (Diagnosis)", "✍️ 創作模式 (Creative/Translation)", "📊 產品導航 (Catalog & Pricing)"])
+                        ["🔍 診斷模式 (Diagnosis)", "✍️ 創作模式 (Creative/Translation)", "📊 產品導航表"])
         st.divider()
         if st.button("🧹 清理對話歷史"):
             st.session_state.messages = []
@@ -85,98 +85,74 @@ else:
         2. TCM ENHANCEMENT: Extract professional logic (e.g., 'Fluid Metabolism', 'Stagnation Clearing') from {lib['tcm']} based on the user's input.
         3. POLISH: Translate the ideas into high-end, elegant English.
         """
-    else:
-        st.header("📊 全品類中英對照及報價清單")
-        st.info("💡 提示：你可以使用下表右上角的放大鏡或搜尋功能快速查找產品名稱或尺寸。")
+    # 模式 3：全自動產品導航表 (對接優化後的 CSV)
+    elif mode == "📊 產品導航表":
+        st.header("📊 全品類中英對照及官方報價單")
 
-        try:
-            price_md = lib.get("prices", "")
-            if not price_md.strip():
-                st.warning("未找到價格資料文件 Price_List.md")
+        csv_path = "docs/Price_List_Optimized.csv"
+        if os.path.exists(csv_path):
+            df_full = pd.read_csv(csv_path)
+
+            # 搜尋與過濾功能
+            search_q = st.text_input("🔍 搜尋產品名稱、規格或功效:", "")
+            if search_q:
+                df_display = df_full[
+                    df_full.astype(str).apply(
+                        lambda x: x.str.contains(search_q, case=False)
+                    ).any(axis=1)
+                ]
             else:
-                st.subheader("📌 來源：Price_List.md（原文）")
-                # 直接显示原文，确保与 Price_List.md 完全一致
-                st.markdown(price_md)
+                df_display = df_full
 
-                # 附加一个可筛选的解析视图（尽量解析；若格式复杂仍以原文为准）
-                rows = []
-                current_product = ""
-                for line in price_md.splitlines():
-                    ln = line.strip()
-                    if not ln.startswith("|"):
-                        continue
-                    parts = [p.strip() for p in ln.split("|")[1:-1]]
-                    if len(parts) < 3:
-                        continue
-                    if parts[0] in {"产品名称", "---"}:
-                        continue
-                    product, spec, usd = parts[0], parts[1], parts[2]
-                    if product:
-                        current_product = product
-                    if current_product and (spec or usd):
-                        rows.append(
-                            {
-                                "產品名稱": current_product,
-                                "規格": spec,
-                                "起步定價（美元）": usd,
-                            }
-                        )
+            st.dataframe(df_display, use_container_width=True, hide_index=True)
 
-                if rows:
-                    st.divider()
-                    st.subheader("🔎 快速检索视图（自动解析）")
-                    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+            st.success(f"✅ 已加載全部 {len(df_full)} 條價格數據")
+        else:
+            st.error("找不到 Price_List_Optimized.csv，請確認已上傳。")
 
-                st.divider()
-                st.subheader("📏 尺寸參考 (Size Reference)")
-                size_data = lib.get("sizes", "")
-                st.markdown(size_data if size_data else "未找到尺寸資料。")
-        except Exception as e:
-            st.error(f"價格表載入失敗：{e}")
+        st.divider()
+        st.subheader("📏 尺寸及手圍佩戴建議")
+        st.markdown(lib.get("sizes", "未找到尺寸表"))
 
         user_input = ""
         mode_instruction = ""
 
-    if mode != "📊 產品導航 (Catalog & Pricing)" and st.button("🚀 生成專家方案", type="primary"):
+    if mode != "📊 產品導航表" and st.button("🚀 生成專家方案", type="primary"):
         if not user_input:
             st.warning("請輸入內容。")
         else:
-            if mode == "🔍 診斷模式 (Diagnosis)":
-                mode_specific_rule = (
-                    "In Section 1, SOP stage is REQUIRED and cannot be omitted. "
-                    "Also include pain-point mapping to one concrete product family. "
-                    "Section 1 must include a Chinese translation for the logic points."
-                )
+            # --- 根據模式動態生成指令 (加入尺寸專業話術) ---
+            if mode.startswith("🔍 診斷模式"):
+                mode_logic = f"""
+                TASK: DIAGNOSTIC_ANALYSIS
+                1. SOP & TCM: Identify stage from {lib['sop']} and syndrome from {lib['tcm']}.
+                2. SIZE EXPERT: If beads are mentioned, explain that larger beads (14mm/18mm) occupy more internal space, making the fit tighter than smaller beads.
+                3. CLOSING: Always suggest offering 2 spare beads to ensure a perfect fit.
+                """
             else:
-                mode_specific_rule = (
-                    "In Creative mode, do not output SOP stage. Focus on polished translation and persuasive product storytelling. "
-                    "Section 1 still needs a short Chinese translation of the creative intent."
-                )
+                mode_logic = f"""
+                TASK: CREATIVE_TRANSLATION
+                1. TCM & STYLE: Use {lib['tcm']} for logic and maintain an imperial, elegant tone.
+                2. OBJECTION HANDLING: Proactively address wrist size concerns. Mention that we provide 2 complimentary spare beads and explain the "Internal Space" logic for larger beads.
+                """
 
-            # 核心指令：強制知識庫優先
             system_instruction = f"""
-            You are a "Master Scent Therapist."
-            MANDATORY: You must prioritize the facts in the provided TCM Library over general AI knowledge.
+            You are a "Master Scent Therapist." 
+            {mode_logic}
 
-            【Core Libraries】
-            - TCM Knowledge: {lib['tcm']}
-            - Product Specs: {lib['product']} | {lib['sizes']} | {lib['prices']}
+            【Library Reference】
+            - Products/Prices: {lib['prices']} 
+            - Precise Sizes & Counts: {lib['sizes']} (Note: 10mm=20pcs, 14mm=16pcs, 18mm=13pcs)
 
-            【Formatting Guide】
-            Regardless of mode, always structure as:
-            ### 1. 療癒師內部邏輯 (Logic & Strategy)
-            - [Modes specifics: TCM diagnosis or Creative intent]
-            - [Chinese Translation of Section 1: translate your logic/strategy into concise Chinese]
-            - [Suggested chase-up strategy + Chinese translation]
-            
-            ### 2. 建議英文回覆 (Mentor's Reply)
-            [1-3 sentences of Zen-like, professional English.]
+            【Professional Phrases to Integrate】
+            - "Since 18mm beads are bolder and thicker, they occupy more internal space on the wrist."
+            - "To ensure a perfect fit, we include 2 complimentary spare beads and a professional elastic cord in your package."
+            - "This allows you to customize the tension for your ultimate comfort."
 
-            ### 3. 中文參考 (Translation)
-            [Accurate Chinese translation of Section 2.]
-
-            【Mode-specific Constraint】
-            {mode_specific_rule}
+            【Output Rules】
+            - Section 2 MUST be: ### 2. 建議英文回覆 (Mentor's Reply)
+            - Section 3 MUST be: ### 3. 中文參考 (Translation)
+            - English must be 1-3 sentences, elegant, and warm.
             """
 
             with st.spinner("AI 正在深度檢索中醫知識庫..."):
