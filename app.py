@@ -192,7 +192,50 @@ else:
                             answer,
                             flags=re.IGNORECASE | re.DOTALL,
                         )
-                        target_text = section2_match.group(0).lower() if section2_match else answer_lower
+                        section3_match = re.search(
+                            r"###\s*3\..*?$",
+                            answer,
+                            flags=re.IGNORECASE | re.DOTALL,
+                        )
+                        target_text = "\n".join(
+                            s for s in [
+                                section2_match.group(0).lower() if section2_match else "",
+                                section3_match.group(0).lower() if section3_match else "",
+                            ] if s
+                        )
+                        if not target_text:
+                            target_text = answer_lower
+
+                        def has_both_images(prod_row):
+                            style_name = str(prod_row.get("Style Image Filename", "")).strip()
+                            ing_name = str(prod_row.get("Ingredients Image Filename", "")).strip()
+                            style_img = os.path.join("images", style_name)
+                            ing_img = os.path.join("images", ing_name)
+                            return os.path.exists(style_img) and os.path.exists(ing_img)
+
+                        # 缺圖時回退到同類可用素材（确保你暂时没图也能稳定展示）
+                        fallback_slug_map = {
+                            "sleep_aid": ["red_musk", "soul_of_shupo"],
+                            "suhe_card": ["grand_suhe_incense"],
+                            "dragon_phoenix_card": ["qi_lin_blood_resin"],
+                            "horse_wealth": ["qi_lin_blood_resin"],
+                            "ginseng_lotus": ["fu_yan_nian"],
+                            "osmanthus_jasmine_pear": ["midnight_pear_in_the_canopy", "youthful_jasmine"],
+                            "sandalwood": ["imperial_dragon_s_breath"],
+                            "agarwood": ["imperial_dragon_s_breath"],
+                            "epidemic_protection": ["an_gong_niu_huang", "grand_suhe_incense"],
+                            "blue_imperial_plum_card": ["lake_blue_imperial_pluim"],
+                            "ziwei_talisman": ["seven_fragrances_and_twelve_essences"],
+                            "pine_cone": ["the_five_elemental_guardians"],
+                            "blessing_comb": ["youthful_jasmine"],
+                            "jasmine_lotion": ["youthful_jasmine"],
+                        }
+
+                        slug_to_row = {}
+                        for _, r in image_df.iterrows():
+                            slug_key = str(r.get("English Slug", "")).strip()
+                            if slug_key:
+                                slug_to_row[slug_key] = r
 
                         best_product = None
                         best_score = 0
@@ -213,6 +256,43 @@ else:
 
                         if best_product is not None and best_score > 0:
                             prod = best_product
+                            used_fallback = False
+
+                            if not has_both_images(prod):
+                                # 先尝试同类映射回退
+                                raw_slug = str(prod.get("English Slug", "")).strip()
+                                for fb_slug in fallback_slug_map.get(raw_slug, []):
+                                    fb_row = slug_to_row.get(fb_slug)
+                                    if fb_row is not None and has_both_images(fb_row):
+                                        prod = fb_row
+                                        used_fallback = True
+                                        break
+
+                            if not has_both_images(prod):
+                                # 若映射回退仍失败，挑选“可用图片且关键词得分最高”的候选
+                                best_available = None
+                                best_available_score = 0
+                                for _, row in image_df.iterrows():
+                                    if not has_both_images(row):
+                                        continue
+                                    name2 = str(row.get("Original Name", ""))
+                                    slug2 = str(row.get("English Slug", ""))
+                                    tokens2 = re.split(r"[\\/，,、\s()（）\-]+", name2)
+                                    kws2 = [name2, slug2] + tokens2
+                                    kws2 = [k.strip().lower() for k in kws2 if len(k.strip()) >= 2]
+                                    score2 = sum(1 for k in kws2 if k in target_text)
+                                    if score2 > best_available_score:
+                                        best_available_score = score2
+                                        best_available = row
+                                if best_available is not None:
+                                    prod = best_available
+                                    used_fallback = True
+
+                            if has_both_images(prod):
+                                if used_fallback:
+                                    st.info(
+                                        f"原推荐产品缺图，已自动回退到可展示素材：{prod['Original Name']}"
+                                    )
                             st.write(f"✅ **推薦產品視覺素材: {prod['Original Name']}**")
                             c1, c2 = st.columns(2)
                             style_img = f"images/{prod['Style Image Filename']}"
@@ -229,8 +309,10 @@ else:
                                     st.image(ing_img, caption=f"{prod['Original Name']} - 配方功效圖")
                                 else:
                                     st.warning(f"缺少圖片檔案: {prod['Ingredients Image Filename']}")
+                            else:
+                                st.warning("已匹配产品，但未找到可展示的成套图片。")
                         else:
-                            st.info("未檢索到推薦產品圖片，請在英文回覆中明確提及具體產品名稱。")
+                            st.info("未檢索到推薦產品，請在第2或第3部分中明确写出产品名称。")
                     else:
                         st.error("找不到 product_image_filenames.csv，請確保檔案已上傳至 docs/ 目錄。")
 
