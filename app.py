@@ -293,22 +293,22 @@ else:
                                     st.info(
                                         f"原推荐产品缺图，已自动回退到可展示素材：{prod['Original Name']}"
                                     )
-                            st.write(f"✅ **推薦產品視覺素材: {prod['Original Name']}**")
-                            c1, c2 = st.columns(2)
-                            style_img = f"images/{prod['Style Image Filename']}"
-                            ing_img = f"images/{prod['Ingredients Image Filename']}"
+                                st.write(f"✅ **推薦產品視覺素材: {prod['Original Name']}**")
+                                c1, c2 = st.columns(2)
+                                style_img = f"images/{prod['Style Image Filename']}"
+                                ing_img = f"images/{prod['Ingredients Image Filename']}"
 
-                            with c1:
-                                if os.path.exists(style_img):
-                                    st.image(style_img, caption=f"{prod['Original Name']} - 款式圖")
-                                else:
-                                    st.warning(f"缺少圖片檔案: {prod['Style Image Filename']}")
+                                with c1:
+                                    if os.path.exists(style_img):
+                                        st.image(style_img, caption=f"{prod['Original Name']} - 款式圖")
+                                    else:
+                                        st.warning(f"缺少圖片檔案: {prod['Style Image Filename']}")
 
-                            with c2:
-                                if os.path.exists(ing_img):
-                                    st.image(ing_img, caption=f"{prod['Original Name']} - 配方功效圖")
-                                else:
-                                    st.warning(f"缺少圖片檔案: {prod['Ingredients Image Filename']}")
+                                with c2:
+                                    if os.path.exists(ing_img):
+                                        st.image(ing_img, caption=f"{prod['Original Name']} - 配方功效圖")
+                                    else:
+                                        st.warning(f"缺少圖片檔案: {prod['Ingredients Image Filename']}")
                             else:
                                 st.warning("已匹配产品，但未找到可展示的成套图片。")
                         else:
