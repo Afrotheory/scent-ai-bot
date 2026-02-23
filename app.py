@@ -36,7 +36,34 @@ if not api_key:
     st.stop()
 
 genai.configure(api_key=api_key)
-model = genai.GenerativeModel('gemini-1.5-flash')
+
+@st.cache_resource
+def get_model():
+    try:
+        models = [
+            m.name
+            for m in genai.list_models()
+            if "generateContent" in getattr(m, "supported_generation_methods", [])
+        ]
+        preferred = ["gemini-1.5-flash", "models/gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.0-pro"]
+
+        # 先按偏好匹配
+        for pref in preferred:
+            for m in models:
+                if pref in m:
+                    return genai.GenerativeModel(model_name=m), m
+
+        # 再用第一個可用模型兜底
+        if models:
+            return genai.GenerativeModel(model_name=models[0]), models[0]
+    except Exception:
+        pass
+
+    # 最後兜底（部分環境只认短名）
+    return genai.GenerativeModel("gemini-1.5-flash"), "gemini-1.5-flash"
+
+
+model, active_model = get_model()
 
 # --- 側邊欄 ---
 with st.sidebar:
@@ -46,6 +73,7 @@ with st.sidebar:
                      "👅 舌診轉譯 (Tongue Analysis)", 
                      "✍️ 簡約回覆 (Casual Chat)",
                      "📊 產品導航表 (Catalog)"])
+    st.caption(f"當前模型：{active_model}")
     st.divider()
     if st.button("🧹 清空對話歷史"):
         st.session_state.messages = []
